@@ -1,0 +1,224 @@
+using System;
+using System.Diagnostics;
+using System.ServiceModel;
+using System.ServiceModel.Channels;
+using System.ServiceModel.Dispatcher;
+
+namespace ChatAppWCFService
+{
+    public class CorrelationIdMessageInspector : IDispatchMessageInspector
+    {
+        private const string CorrelationIdHeader = "CorrelationId";
+        private const string CorrelationIdNamespace = "http://yournamespace.com/correlation";
+
+        //public object AfterReceiveRequest(ref Message request, IClientChannel channel, InstanceContext instanceContext)
+        //{
+        //    string correlationId = null;
+
+        //    // Extract Correlation ID from incoming headers
+        //    int headerIndex = request.Headers.FindHeader(CorrelationIdHeader, CorrelationIdNamespace);
+        //    if (headerIndex >= 0)
+        //    {
+        //        correlationId = request.Headers.GetHeader<string>(headerIndex);
+        //    }
+        //    else
+        //    {
+        //        // Generate a new Correlation ID if not present
+        //        correlationId = Guid.NewGuid().ToString();
+        //    }
+
+        //    // Store Correlation ID for use in the reply
+        //    OperationContext.Current.Extensions.Add(new CorrelationIdExtension(correlationId));
+
+        //    // Log the Correlation ID and headers
+        //    LogHeaders(request.Headers, correlationId, "Incoming");
+
+        //    return correlationId; // Can be used as the correlationState
+        //}
+
+        public object AfterReceiveRequest(ref Message request, IClientChannel channel, InstanceContext instanceContext)
+        {
+            string correlationId = null;
+
+            // Extract Correlation ID from incoming headers
+            int headerIndex = request.Headers.FindHeader(CorrelationIdHeader, CorrelationIdNamespace);
+            if (headerIndex >= 0)
+            {
+                correlationId = request.Headers.GetHeader<string>(headerIndex);
+            }
+            else
+            {
+                // Generate a new Correlation ID if not present
+                correlationId = Guid.NewGuid().ToString();    
+            }
+
+            // Set the ActivityId in the CorrelationManager
+            System.Diagnostics.Trace.CorrelationManager.ActivityId = Guid.Parse(correlationId);
+
+            // Store Correlation ID for use in the reply
+            OperationContext.Current.Extensions.Add(new CorrelationIdExtension(correlationId));
+
+            // Log the Correlation ID and headers
+            LogHeaders(request.Headers, correlationId, "Incoming");
+
+            return correlationId; // Can be used as the correlationState
+        }
+
+        //public void BeforeSendReply(ref Message reply, object correlationState)
+        //{
+        //    string correlationId = correlationState as string;
+
+        //    if (string.IsNullOrEmpty(correlationId))
+        //    {
+        //        // Attempt to retrieve Correlation ID from OperationContext if not passed via correlationState
+        //        var extension = OperationContext.Current.Extensions.Find<CorrelationIdExtension>();
+        //        correlationId = extension?.CorrelationId ?? "None Found";
+        //    }
+
+        //    // Add or replace Correlation ID in the outgoing headers
+        //    MessageHeader<string> header = new MessageHeader<string>(correlationId);
+        //    MessageHeader untypedHeader = header.GetUntypedHeader(CorrelationIdHeader, CorrelationIdNamespace);
+        //    reply.Headers.Add(untypedHeader);
+
+        //    // Update the ActivityId header if it exists (to replace the "00000000-0000-0000-0000-000000000000")
+        //    int activityIdIndex = reply.Headers.FindHeader("ActivityId", "http://schemas.microsoft.com/2004/09/ServiceModel/Diagnostics");
+        //    if (activityIdIndex >= 0)
+        //    {
+        //        reply.Headers.RemoveAt(activityIdIndex); // Remove the default ActivityId
+        //    }
+
+        //    // Add new ActivityId header with the CorrelationId
+        //    MessageHeader<string> activityIdHeader = new MessageHeader<string>(correlationId);
+        //    MessageHeader untypedActivityIdHeader = activityIdHeader.GetUntypedHeader("ActivityId", "http://schemas.microsoft.com/2004/09/ServiceModel/Diagnostics");
+        //    reply.Headers.Add(untypedActivityIdHeader);
+
+        //    // Log the Correlation ID and headers
+        //    LogHeaders(reply.Headers, correlationId, "Outgoing");
+        //}
+        public void BeforeSendReply(ref Message reply, object correlationState)
+        {
+            string correlationId = correlationState as string;
+
+            if (string.IsNullOrEmpty(correlationId))
+            {
+                // Attempt to retrieve Correlation ID from OperationContext if not passed via correlationState
+                var extension = OperationContext.Current.Extensions.Find<CorrelationIdExtension>();
+                correlationId = extension?.CorrelationId ?? Guid.NewGuid().ToString();
+            }
+
+            // Add or replace Correlation ID in the outgoing headers
+            MessageHeader<string> header = new MessageHeader<string>(correlationId);
+            MessageHeader untypedHeader = header.GetUntypedHeader(CorrelationIdHeader, CorrelationIdNamespace);
+            reply.Headers.Add(untypedHeader);
+
+            // Update the ActivityId header if it exists
+            int activityIdIndex = reply.Headers.FindHeader("ActivityId", "http://schemas.microsoft.com/2004/09/ServiceModel/Diagnostics");
+            if (activityIdIndex >= 0)
+            {
+                reply.Headers.RemoveAt(activityIdIndex); // Remove the default ActivityId
+            }
+
+            // Add new ActivityId header with the CorrelationId
+            MessageHeader<string> activityIdHeader = new MessageHeader<string>(correlationId);
+            MessageHeader untypedActivityIdHeader = activityIdHeader.GetUntypedHeader("ActivityId", "http://schemas.microsoft.com/2004/09/ServiceModel/Diagnostics");
+            reply.Headers.Add(untypedActivityIdHeader);
+
+            // Add a test header to verify interceptor is working
+            MessageHeader<string> testHeader = new MessageHeader<string>("TestValue");
+            MessageHeader untypedTestHeader = testHeader.GetUntypedHeader("TestHeader", "http://yournamespace.com/test");
+            reply.Headers.Add(untypedTestHeader);
+
+            // Log the Correlation ID and headers
+            LogHeaders(reply.Headers, correlationId, "Outgoing");
+        }
+
+
+
+
+        //public void BeforeSendReply(ref Message reply, object correlationState)
+        //{
+        //    string correlationId = correlationState as string;
+
+        //    if (string.IsNullOrEmpty(correlationId))
+        //    {
+        //        // Attempt to retrieve Correlation ID from OperationContext if not passed via correlationState
+        //        var extension = OperationContext.Current.Extensions.Find<CorrelationIdExtension>();
+        //        correlationId = extension?.CorrelationId ?? Guid.NewGuid().ToString();
+        //    }
+
+        //    // Add Correlation ID to outgoing headers
+        //    MessageHeader<string> header = new MessageHeader<string>(correlationId);
+        //    MessageHeader untypedHeader = header.GetUntypedHeader(CorrelationIdHeader, CorrelationIdNamespace);
+        //    reply.Headers.Add(untypedHeader);
+
+        //    // Log the Correlation ID and headers
+        //    LogHeaders(reply.Headers, correlationId, "Outgoing");
+        //}
+
+        //private void LogHeaders(MessageHeaders headers, string correlationId, string direction)
+        //{
+        //    // Example: Log headers using Trace
+        //    Trace.WriteLine($"{direction} Request/Response Headers with Correlation ID: {correlationId}");
+
+        //    for (int i = 0; i < headers.Count; i++)
+        //    {
+        //        var header = headers[i];
+        //        string headerName = header.Name;
+        //        string headerNamespace = header.Namespace;
+        //        object headerValue = headers.GetHeader<object>(i);
+
+        //        Trace.WriteLine($"Header {i}: {headerName} ({headerNamespace}) = {headerValue}");
+        //    }
+        //}
+        private void LogHeaders(MessageHeaders headers, string correlationId, string direction)
+        {
+            // Example: Log headers using Trace
+            Trace.WriteLine($"{direction} Request/Response Headers with Correlation ID: {correlationId}");
+
+            for (int i = 0; i < headers.Count; i++)
+            {
+                var header = headers[i];
+                string headerName = header.Name;
+                string headerNamespace = header.Namespace;
+
+                // Handle certain headers that may cause deserialization issues
+                if (headerName == "Action" && headerNamespace == "http://www.w3.org/2005/08/addressing")
+                {
+                    // Log the action as a string directly
+                    Trace.WriteLine($"Header {i}: {headerName} ({headerNamespace}) = {header.ToString()}");
+                }
+                else
+                {
+                    try
+                    {
+                        // Attempt to get the header value
+                        object headerValue = headers.GetHeader<object>(i);
+                        Trace.WriteLine($"Header {i}: {headerName} ({headerNamespace}) = {headerValue}");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log any exceptions during header deserialization
+                        Trace.WriteLine($"Error reading header {headerName}: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+
+    }
+
+    // Helper class to store Correlation ID in OperationContext
+    public class CorrelationIdExtension : IExtension<OperationContext>
+    {
+        public string CorrelationId { get; private set; }
+
+        public CorrelationIdExtension(string correlationId)
+        {
+            CorrelationId = correlationId;
+        }
+
+        public void Attach(OperationContext owner) { }
+
+        public void Detach(OperationContext owner) { }
+    }
+}
