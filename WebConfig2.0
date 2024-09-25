@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+	<system.web>
+		<compilation debug="true" targetFramework="4.8" />
+		<httpRuntime targetFramework="4.8" />
+	</system.web>
+
+	<system.serviceModel>
+		<!-- Message Logging Configuration -->
+		<diagnostics>
+			<messageLogging
+			logEntireMessage="true"
+			logMalformedMessages="true"
+			logMessagesAtServiceLevel="true"
+			logMessagesAtTransportLevel="true"
+			logKnownPii="true"
+			maxMessagesToLog="50000"
+			maxSizeOfMessageToLog="5000000" />
+		</diagnostics>
+
+		<!-- Bindings Configuration -->
+		<bindings>
+			<basicHttpBinding>
+				<binding name="ChatAppBinding">
+					<security mode="None" />
+				</binding>
+			</basicHttpBinding>
+		</bindings>
+
+		<!-- Behaviors Configuration -->
+		<behaviors>
+			<!-- Service Behaviors -->
+			<serviceBehaviors>
+				<behavior name="ChatAppBehavior">
+					<serviceMetadata httpGetEnabled="true" />
+					<serviceDebug includeExceptionDetailInFaults="true" />
+					<!-- Add the Custom Correlation ID Behavior -->
+
+					<!-- Custom correlation ID behavior -->
+					<correlationIdBehavior />
+				</behavior>
+
+
+			</serviceBehaviors>
+
+			<!-- Endpoint Behaviors -->
+			<endpointBehaviors>
+				<behavior name="ChatAppEndpointBehavior">
+					<clientCredentials>
+						<clientCertificate
+						  findValue="ChatAppWCFService"
+						  storeLocation="LocalMachine"
+						  storeName="My"
+						  x509FindType="FindBySubjectName" />
+					</clientCredentials>
+				</behavior>
+			</endpointBehaviors>
+		</behaviors>
+
+		<!-- Behavior Extensions Registration -->
+		<!--<extensions>
+			<behaviorExtensions>
+				<add name="correlationIdBehavior"
+					 type="ChatAppWCFService.CorrelationIdBehaviorExtension, ChatAppWCFService" />
+			</behaviorExtensions>
+		</extensions>-->
+		<extensions>
+			<behaviorExtensions>
+				<add name="correlationIdBehavior" type="ChatAppWCFService.CorrelationIdBehaviorExtension, ChatAppWCFService" />
+			</behaviorExtensions>
+		</extensions>
+
+		<!-- Protocol Mapping -->
+		<protocolMapping>
+			<add scheme="http" binding="basicHttpBinding" />
+		</protocolMapping>
+
+		<!-- Service Hosting Environment -->
+		<serviceHostingEnvironment
+		  aspNetCompatibilityEnabled="true"
+		  multipleSiteBindingsEnabled="true" />
+
+		<!-- Services Configuration -->
+		<services>
+			<service name="ChatAppWcfService.CalculatorService" behaviorConfiguration="ChatAppBehavior">
+				<endpoint
+				  address=""
+				  binding="basicHttpBinding"
+				  contract="ChatAppWcfService.ICalculator" />
+				<endpoint
+				  address="mex"
+				  binding="mexHttpBinding"
+				  contract="IMetadataExchange" />
+				<host>
+					<baseAddresses>
+						<add baseAddress="http://localhost/ChatAppWcfService/CalculatorService" />
+					</baseAddresses>
+				</host>
+			</service>
+		</services>
+
+	</system.serviceModel>
+
+	<!-- System.WebServer Configuration -->
+	<system.webServer>
+		<modules runAllManagedModulesForAllRequests="true"/>
+	</system.webServer>
+
+	<!-- System.Diagnostics Configuration for WCF Message Logging -->
+	<system.diagnostics>
+		<sources>
+			<!-- WCF Message Logging Source -->
+			<source name="System.ServiceModel.MessageLogging" switchValue="Verbose">
+				<listeners>
+					<add name="messages"
+						 type="System.Diagnostics.XmlWriterTraceListener"
+						 initializeData="MessageLog.svclog" />
+				</listeners>
+			</source>
+
+			<!-- Additional Tracing for Custom Message Inspector (Optional) -->
+			<source name="CustomInspectorTrace" switchValue="Information">
+				<listeners>
+					<add name="customInspectorListener"
+						 type="System.Diagnostics.XmlWriterTraceListener"
+						 initializeData="CustomInspectorLog.svclog" />
+				</listeners>
+			</source>
+
+			<!-- General WCF Tracing -->
+			<source name="System.ServiceModel" switchValue="Information, ActivityTracing" propagateActivity="true">
+				<listeners>
+					<add name="xml"/>
+				</listeners>
+			</source>
+		</sources>
+
+		<!-- Shared Listeners -->
+		<sharedListeners>
+			<add name="xml" type="System.Diagnostics.XmlWriterTraceListener" initializeData="WcfTrace.svclog"/>
+			<add name="mlogs" type="System.Diagnostics.XmlWriterTraceListener" initializeData="MLog.svclog"/>
+			<add name="sharedListener" type="System.Diagnostics.XmlWriterTraceListener" initializeData="SharedTraceLog.svclog"/>
+		</sharedListeners>
+
+		<trace autoflush="true" />
+	</system.diagnostics>
+	<runtime>
+		<assemblyBinding xmlns="urn:schemas-microsoft-com:asm.v1">
+			<logBindingFailures enabled="true" />
+		</assemblyBinding>
+	</runtime>
+</configuration>
