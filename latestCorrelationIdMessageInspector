@@ -1,0 +1,319 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.ServiceModel;
+using System.ServiceModel.Channels;
+using System.ServiceModel.Dispatcher;
+using Newtonsoft.Json;
+
+namespace ChatAppWCFService
+{
+    public class CorrelationIdMessageInspector : IDispatchMessageInspector
+    {
+        private const string CorrelationIdHeaderName = "CorrelationId";
+        private const string TestValueHeaderName = "TestValue";
+
+        public object AfterReceiveRequest(ref Message request, IClientChannel channel, InstanceContext instanceContext)
+        {
+            string correlationId = null;
+            string testValue = null;
+
+            // Log the request message
+            try
+            {
+                // Create a buffered copy of the message
+                MessageBuffer buffer = request.CreateBufferedCopy(int.MaxValue);
+                Message requestCopy = buffer.CreateMessage();
+
+                // Log headers and body
+                LogMessage("Request", requestCopy, request);
+
+                // Replace the original request with a new copy to preserve it
+                request = buffer.CreateMessage();
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Error logging request: {ex.Message}");
+                // Handle or rethrow if necessary
+            }
+
+            // Get the HTTP headers from the incoming request
+            if (request.Properties.TryGetValue(HttpRequestMessageProperty.Name, out object httpRequestMessageObject)
+                && httpRequestMessageObject is HttpRequestMessageProperty httpRequest)
+            {
+                // Extract Correlation ID from HTTP headers
+                correlationId = httpRequest.Headers[CorrelationIdHeaderName];
+                testValue = httpRequest.Headers[TestValueHeaderName];
+                LogHttpHeaders(httpRequest, correlationId, "Incoming");
+            }
+
+            if (string.IsNullOrEmpty(correlationId))
+            {
+                // Generate a new Correlation ID if not present
+                correlationId = Guid.NewGuid().ToString();
+            }
+
+            // Set the ActivityId in the CorrelationManager
+            Trace.CorrelationManager.ActivityId = Guid.Parse(correlationId);
+
+            // Store Correlation ID and TestValue for use in the reply
+            var extension = new CorrelationIdExtension(correlationId, testValue);
+            OperationContext.Current.Extensions.Add(extension);
+
+            return extension; // Return the extension as correlationState
+        }
+
+        //public void BeforeSendReply(ref Message reply, object correlationState)
+        //{
+        //    string correlationId = null;
+        //    string testValue = null;
+
+        //    if (correlationState is CorrelationIdExtension extension)
+        //    {
+        //        correlationId = extension.CorrelationId;
+        //        testValue = extension.TestValue;
+        //    }
+        //     // Get or create the HTTP response message property
+        //    if (!reply.Properties.TryGetValue(HttpResponseMessageProperty.Name, out object httpResponseMessageObject)
+        //        || !(httpResponseMessageObject is HttpResponseMessageProperty httpResponse))
+        //    {
+        //        httpResponse = new HttpResponseMessageProperty();
+        //        reply.Properties.Add(HttpResponseMessageProperty.Name, httpResponse);
+        //    }
+
+        //    // Add the Correlation ID to the HTTP response headers
+        //    httpResponse.Headers[CorrelationIdHeaderName] = correlationId;
+
+        //    // Add TestValue header to the HTTP response headers
+        //    httpResponse.Headers[TestValueHeaderName] = testValue ?? "Doesn't exist";
+
+        //    // Log the response message
+        //    try
+        //    {
+        //        // Create a buffered copy of the reply message
+        //        MessageBuffer buffer = reply.CreateBufferedCopy(int.MaxValue);
+        //        Message replyCopy = buffer.CreateMessage();
+
+        //        // Log headers and body
+        //        LogMessage("Response", replyCopy, reply);
+
+        //        // Replace the original reply with a new copy to preserve it
+        //        reply = buffer.CreateMessage();
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Trace.TraceError($"Error logging response: {ex.Message}");
+        //        // Handle or rethrow if necessary
+        //    }
+
+
+        //}
+        public void BeforeSendReply(ref Message reply, object correlationState)
+        {
+            string correlationId = null;
+            string testValue = null;
+
+            if (correlationState is CorrelationIdExtension extension)
+            {
+                correlationId = extension.CorrelationId;
+                testValue = extension.TestValue;
+            }
+
+            // Get or create the HTTP response message property
+            if (!reply.Properties.TryGetValue(HttpResponseMessageProperty.Name, out object httpResponseMessageObject)
+                || !(httpResponseMessageObject is HttpResponseMessageProperty httpResponse))
+            {
+                httpResponse = new HttpResponseMessageProperty();
+                reply.Properties.Add(HttpResponseMessageProperty.Name, httpResponse);
+            }
+
+            // Add the Correlation ID and TestValue to the HTTP response headers
+            httpResponse.Headers[CorrelationIdHeaderName] = correlationId;
+            httpResponse.Headers[TestValueHeaderName] = testValue ?? "Doesn't exist";
+
+            // Log the response message
+            try
+            {
+                // Create a buffered copy of the reply message
+                MessageBuffer buffer = reply.CreateBufferedCopy(int.MaxValue);
+                Message replyCopy = buffer.CreateMessage();
+
+                // Log the message
+                LogMessage("Response", replyCopy);
+
+                // Replace the original reply with a new copy to preserve it
+                reply = buffer.CreateMessage();
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Error logging response: {ex.Message}");
+            }
+        }
+
+        private void LogMessage(string messageType, Message message)
+        {
+            try
+            {
+                // Create a buffered copy of the message
+                MessageBuffer buffer = message.CreateBufferedCopy(int.MaxValue);
+                Message messageCopy = buffer.CreateMessage();
+
+                // Read HTTP headers
+                var httpHeaders = new Dictionary<string, string>();
+
+                // Extract HTTP Response headers
+                if (messageCopy.Properties.TryGetValue(HttpResponseMessageProperty.Name, out object httpResponseMessageObject)
+                    && httpResponseMessageObject is HttpResponseMessageProperty httpResponse)
+                {
+                    // Include all available HTTP response headers dynamically
+                    foreach (string headerName in httpResponse.Headers.AllKeys)
+                    {
+                        httpHeaders[headerName] = httpResponse.Headers[headerName];
+                    }
+                }
+
+                // Read body
+                string body = null;
+                if (!messageCopy.IsEmpty)
+                {
+                    using (var reader = messageCopy.GetReaderAtBodyContents())
+                    {
+                        reader.MoveToContent();
+                        body = reader.ReadOuterXml();
+                    }
+                }
+
+                // Extract CorrelationId from HTTP headers
+                httpHeaders.TryGetValue(CorrelationIdHeaderName, out string correlationId);
+
+                // Create log entry
+                var logEntry = new
+                {
+                    Timestamp = DateTime.Now,
+                    MessageType = messageType,
+                    CorrelationId = correlationId,
+                    HttpHeaders = httpHeaders,
+                    Body = body
+                };
+
+                // Serialize to JSON
+                string json = JsonConvert.SerializeObject(logEntry, Formatting.Indented);
+
+                // Write to log
+                string logFilePath = @"Logs";
+                System.IO.File.AppendAllText(logFilePath, json + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Error logging message: {ex.Message}");
+            }
+        }
+
+
+        private void LogMessage(string messageType, Message message, Message originalMessage)
+        {
+            try
+            {
+                // Dictionary to store headers as key-value pairs
+                var headersDict = new Dictionary<string, string>();
+
+                // Iterate over SOAP headers and add them to the dictionary
+                for (int i = 0; i < originalMessage.Headers.Count; i++)
+                {
+                    var header = originalMessage.Headers[i];
+                    string headerContent = originalMessage.Headers.GetHeader<string>(i);
+                    headersDict[header.Name] = headerContent;
+                }
+
+                // Check for HTTP Headers (for incoming requests and outgoing responses)
+                if (originalMessage.Properties.TryGetValue(HttpRequestMessageProperty.Name, out object httpRequestMessageObject)
+                    && httpRequestMessageObject is HttpRequestMessageProperty httpRequest)
+                {
+                    foreach (string headerName in httpRequest.Headers.AllKeys)
+                    {
+                        headersDict[headerName] = httpRequest.Headers[headerName];
+                    }
+                }
+                else if (originalMessage.Properties.TryGetValue(HttpResponseMessageProperty.Name, out object httpResponseMessageObject)
+                         && httpResponseMessageObject is HttpResponseMessageProperty httpResponse)
+                {
+                    foreach (string headerName in httpResponse.Headers.AllKeys)
+                    {
+                        headersDict[headerName] = httpResponse.Headers[headerName];
+                    }
+                }
+
+                // Read body
+                string body = null;
+                if (message.IsEmpty == false)
+                {
+                    using (var reader = message.GetReaderAtBodyContents())
+                    {
+                        reader.MoveToContent();
+                        body = reader.ReadOuterXml();
+                    }
+                }
+
+                // Create log entry
+                var logEntry = new
+                {
+                    Timestamp = DateTime.Now,
+                    MessageType = messageType,
+                    Headers = headersDict, // Store headers as dictionary
+                    Body = body
+                };
+
+                // Serialize to JSON
+                string json = JsonConvert.SerializeObject(logEntry, Formatting.Indented);
+
+                // Write to log
+                string logFilePath = @"Logs";
+                System.IO.File.AppendAllText(logFilePath, json + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceError($"Error logging message: {ex.Message}");
+                // Handle or rethrow if necessary
+            }
+        }
+
+        private void LogHttpHeaders(HttpRequestMessageProperty httpRequest, string correlationId, string direction)
+        {
+            Trace.WriteLine($"{direction} HTTP Request Headers with Correlation ID: {correlationId}");
+
+            foreach (string headerName in httpRequest.Headers.AllKeys)
+            {
+                string headerValue = httpRequest.Headers[headerName];
+                Trace.WriteLine($"Header: {headerName} = {headerValue}");
+            }
+        }
+
+        private void LogHttpHeaders(HttpResponseMessageProperty httpResponse, string correlationId, string direction)
+        {
+            Trace.WriteLine($"{direction} HTTP Response Headers with Correlation ID: {correlationId}");
+
+            foreach (string headerName in httpResponse.Headers.AllKeys)
+            {
+                string headerValue = httpResponse.Headers[headerName];
+                Trace.WriteLine($"Header: {headerName} = {headerValue}");
+            }
+        }
+
+        // Helper class to store Correlation ID and TestValue in OperationContext
+        public class CorrelationIdExtension : IExtension<OperationContext>
+        {
+            public string CorrelationId { get; private set; }
+            public string TestValue { get; private set; }
+
+            public CorrelationIdExtension(string correlationId, string testValue)
+            {
+                CorrelationId = correlationId;
+                TestValue = testValue;
+            }
+
+            public void Attach(OperationContext owner) { }
+
+            public void Detach(OperationContext owner) { }
+        }
+    }
+}
