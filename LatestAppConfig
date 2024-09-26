@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+	<system.web>
+		<compilation debug="true" targetFramework="4.8" />
+		<httpRuntime targetFramework="4.8" />
+	</system.web>
+
+	<system.serviceModel>
+		<!-- Bindings Configuration -->
+		<bindings>
+			<basicHttpBinding>
+				<binding name="ChatAppBinding">
+					<security mode="None" />
+				</binding>
+			</basicHttpBinding>
+		</bindings>
+
+		<!-- Behaviors Configuration -->
+		<behaviors>
+			<!-- Service Behaviors -->
+			<serviceBehaviors>
+				<behavior name="ChatAppBehavior">
+					<serviceMetadata httpGetEnabled="true" />
+					<serviceDebug includeExceptionDetailInFaults="true" />
+					<!-- Add the Custom Correlation ID Behavior -->
+					<correlationIdBehavior />
+				</behavior>
+			</serviceBehaviors>
+
+			<!-- Endpoint Behaviors -->
+			<endpointBehaviors>
+				<behavior name="ChatAppEndpointBehavior">
+					<clientCredentials>
+						<clientCertificate
+						  findValue="ChatAppWCFService"
+						  storeLocation="LocalMachine"
+						  storeName="My"
+						  x509FindType="FindBySubjectName" />
+					</clientCredentials>
+				</behavior>
+			</endpointBehaviors>
+		</behaviors>
+
+		<!-- Behavior Extensions Registration -->
+		<extensions>
+			<behaviorExtensions>
+				<add name="correlationIdBehavior"
+					 type="ChatAppWCFService.CorrelationIdBehaviorExtension, tw" />
+			</behaviorExtensions>
+		</extensions>
+
+		<!-- Protocol Mapping -->
+		<protocolMapping>
+			<add scheme="http" binding="basicHttpBinding" />
+		</protocolMapping>
+
+		<!-- Service Hosting Environment -->
+		<serviceHostingEnvironment
+		  aspNetCompatibilityEnabled="true"
+		  multipleSiteBindingsEnabled="true" />
+
+		<!-- Services Configuration -->
+		<services>
+			<service name="ChatAppWcfService.CalculatorService" behaviorConfiguration="ChatAppBehavior">
+				<endpoint
+				  address=""
+				  binding="basicHttpBinding"
+				  bindingConfiguration="ChatAppBinding"
+				  contract="ChatAppWcfService.ICalculator" />
+				<endpoint
+				  address="mex"
+				  binding="mexHttpBinding"
+				  contract="IMetadataExchange" />
+				<host>
+					<baseAddresses>
+						<add baseAddress="http://localhost/ChatAppWcfService/CalculatorService" />
+					</baseAddresses>
+				</host>
+			</service>
+		</services>
+	</system.serviceModel>
+
+	<!-- Removed the system.webServer section as it's not applicable for console-hosted services -->
+	<!--
+	<system.webServer>
+		<modules runAllManagedModulesForAllRequests="true">
+			<add name="ResponseLoggingModule" type="YourNamespace.ResponseLoggingModule" />
+		</modules>
+	</system.webServer>
+	-->
+
+	<system.webServer>
+		<modules runAllManagedModulesForAllRequests="true">
+			<add name="ResponseLoggingModule" type="ChatAppWCFService.ResponseLoggingModule, ChatAppWCFService" />
+		</modules>
+	</system.webServer>
+
+	<runtime>
+		<assemblyBinding xmlns="urn:schemas-microsoft-com:asm.v1">
+			<logBindingFailures enabled="true" />
+		</assemblyBinding>
+	</runtime>
+</configuration>
